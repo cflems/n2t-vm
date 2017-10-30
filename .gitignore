@@ -1,3 +1,5 @@
+.DS_Store
+
 # Compiled class file
 *.class
 
@@ -6,6 +8,8 @@
 
 # BlueJ files
 *.ctxt
+*.pkh
+*.bluej
 
 # Mobile Tools for Java (J2ME)
 .mtj.tmp/
