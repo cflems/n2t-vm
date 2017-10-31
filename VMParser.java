@@ -20,7 +20,7 @@ public class VMParser {
 		segmap.put("this", "THIS");
 		segmap.put("that", "THAT");
 	}
-	
+	//test
 	// still needs functions, labels, ifs, gotos
 	// you can do vmp.run(a); vmp.run(b); to direct to multiple outputs
 	public void run (File outfile) throws IOException {
