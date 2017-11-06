@@ -4,78 +4,99 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.HashMap;
 
 public class VMParser {
-	private File infile;
-	private String classname;
+	private PrintWriter outstream;
+	// map segment names to their assembly variables
 	private HashMap<String, String> segmap;
+	// unique IDs for making internal jumps
+	private int vm_internal;
+	// the function we're currently processing
+	private String fnname;
 
-	public VMParser (File infile, String classname) {
-		this.infile = infile;
-		this.classname = classname;
+	public VMParser (File outfile) throws IOException {
 		this.segmap = new HashMap<String, String>();
 		segmap.put("local", "LCL");
 		segmap.put("argument", "ARG");
 		segmap.put("this", "THIS");
 		segmap.put("that", "THAT");
+		this.vm_internal = 0;
+		this.fnname = "";
+		this.outstream = new PrintWriter(new FileWriter(outfile));
+		bootstrap(outstream);
 	}
 	
-	// still needs functions, labels, ifs, gotos
-	// you can do vmp.run(a); vmp.run(b); to direct to multiple outputs
-	public void run (File outfile) throws IOException {
+	private String[] processLine (String ln) {
+		ln = ln.replaceAll("\\/\\/.*", "");
+		String[] potentials = ln.split("\\s");
+		ArrayList<String> applicable = new ArrayList<String>(potentials.length);
+		for (int i = 0; i < potentials.length; i++) {
+			if (potentials[i].trim().length() > 0) applicable.add(potentials[i].trim());
+		}
+		return applicable.toArray(new String[0]);
+	}
+	
+	private void bootstrap (PrintWriter outstream) {
+		// SP=256
+		outstream.println("@256");
+		outstream.println("D=A");
+		outstream.println("@SP");
+		outstream.println("M=D");
+		// call Sys.init
+		callFunction("Sys.init", "0");
+	}	
+	
+	public void run (File infile, String classname) throws IOException {
 		BufferedReader instream = new BufferedReader(new FileReader(infile));
-		PrintWriter outstream = new PrintWriter(new FileWriter(outfile));
-		
-		// runtime variables
-		int vm_internal = 0;
-		
-		// load @LCL and @ARG into memory
 		
 		for (String line = instream.readLine(); line != null; line = instream.readLine()) {
 			line = line.trim();
-			if (line.length() < 1) continue;
-			String cmd = line.substring(0, line.indexOf(' ') != -1 ? line.indexOf(' ') : 0).trim().toLowerCase();
-			switch (cmd) {
+			String[] processed = processLine(line);
+			if (processed.length < 1) continue;
+
+			switch (processed[0].toLowerCase()) {
 			case "push":
-				if (line.lastIndexOf(' ') < 0) throw new VMParserException("Malformatted push statement.");
-				pushsegmt(line.substring(line.indexOf(' ')+1, line.lastIndexOf(' ')).trim().toLowerCase(), line.substring(line.lastIndexOf(' ')+1), outstream);
+				if (processed.length < 3) throw new VMParserException("Malformatted push statement.");
+				pushsegmt(processed[1], processed[2], classname);
 				break;
 			case "pop":
-				popsegmt(line.substring(line.indexOf(' ')+1, line.lastIndexOf(' ')).trim().toLowerCase(), line.substring(line.lastIndexOf(' ')+1), outstream);
+				if (processed.length < 3) throw new VMParserException("Malformatted pop statement.");
+				popsegmt(processed[1], processed[2], classname);
 				break;
 			case "add":
-				popsegmt("constant", "13", outstream);
+				popvar("R13");
 				popD(outstream);
-				outstream.println("@13");
+				outstream.println("@R13");
 				outstream.println("D=D+M");
 				pushD(outstream);
 				break;
 			case "sub":
-				popsegmt("constant", "13", outstream);
+				popvar("R13");
 				popD(outstream);
-				outstream.println("@13");
+				outstream.println("@R13");
 				outstream.println("D=D-M");
 				pushD(outstream);
 				break;
 			case "and":
-				popsegmt("constant", "13", outstream);
+				popvar("R13");
 				popD(outstream);
-				outstream.println("@13");
+				outstream.println("@R13");
 				outstream.println("D=D&M");
 				pushD(outstream);
 				break;
 			case "or":
-				popsegmt("constant", "13", outstream);
+				popvar("R13");
 				popD(outstream);
-				outstream.println("@13");
+				outstream.println("@R13");
 				outstream.println("D=D|M");
 				pushD(outstream);
 				break;
 			case "eq":
 			case "gt":
 			case "lt":
-				comparison(cmd, vm_internal++, vm_internal++, outstream); // pass two names that will never overlap in order to perform jumps
+				comparison(processed[0].toLowerCase());
 				break;
 			case "neg":
 				popD(outstream);
@@ -85,19 +106,123 @@ public class VMParser {
 			case "not":
 				popD(outstream);
 				outstream.println("D=!D");
+				pushD(outstream);
+				break;
+			case "goto":
+				if (processed.length < 2) throw new VMParserException("Too few arguments to 'goto'.");
+				outstream.println("@"+fnname+"$"+processed[1]);
+				outstream.println("0;JMP");
+				break;
+			case "if-goto":
+				if (processed.length < 2) throw new VMParserException("Too few arguments to 'if-goto'.");
+				popD(outstream);
+				outstream.println("@"+fnname+"$"+processed[1]);
+				outstream.println("D;JNE");
+				break;
+			case "label":
+				if (processed.length < 2) throw new VMParserException("Too few arguments to 'label'.");
+				outstream.println("("+fnname+"$"+processed[1]+")");
+				break;
+			case "function":
+				if (processed.length < 3) throw new VMParserException("Too few arguments to 'function'.");
+				int locals = Integer.parseInt(processed[2]);
+				fnname = processed[1];
+				outstream.println("("+processed[1]+")");
+				for (int i = 0; i < locals; i++) {
+					pushsegmt("constant", "0", classname);
+				}
+				break;
+			case "call": // syntax: call function nargs
+				if (processed.length < 3) throw new VMParserException("Too few arguments to 'call'.");
+				callFunction(processed[1], processed[2]);
+				break;
+			case "return":
+				outstream.println("@LCL");
+				outstream.println("D=M");
+				outstream.println("@R14"); // R14 is FRAME
+				outstream.println("M=D");
+				outstream.println("@5");
+				outstream.println("A=D-A");
+				outstream.println("D=M");
+				outstream.println("@R15"); // R15 is RET
+				outstream.println("M=D");
+				popsegmt("argument", "0", classname); // *ARG = pop() => pop argument 0
+				// SP = ARG+1
+				outstream.println("@ARG");
+				outstream.println("D=M+1");
+				outstream.println("@SP");
+				outstream.println("M=D");
+				// THAT = *(FRAME-1)
+				outstream.println("@R14");
+				outstream.println("A=M-1");
+				outstream.println("D=M");
+				outstream.println("@THAT");
+				outstream.println("M=D");
+				// THIS = *(FRAME-2)
+				outstream.println("@2");
+				outstream.println("D=A");
+				outstream.println("@R14");
+				outstream.println("A=M-D");
+				outstream.println("D=M");
+				outstream.println("@THIS");
+				outstream.println("M=D");
+				// ARG = *(FRAME-3)
+				outstream.println("@3");
+				outstream.println("D=A");
+				outstream.println("@R14");
+				outstream.println("A=M-D");
+				outstream.println("D=M");
+				outstream.println("@ARG");
+				outstream.println("M=D");
+				// LCL = *(FRAME-4)
+				outstream.println("@4");
+				outstream.println("D=A");
+				outstream.println("@R14");
+				outstream.println("A=M-D");
+				outstream.println("D=M");
+				outstream.println("@LCL");
+				outstream.println("M=D");
+				// goto RET (R15)
+				outstream.println("@R15");
+				outstream.println("A=M");
+				outstream.println("0;JMP");
 				break;
 			default:
-				throw new VMParserException("Unrecognized instruction: "+cmd);
+				throw new VMParserException("Unrecognized instruction: "+processed[0]);
 			}
 		}
 		instream.close();
-		outstream.close();
 	}
 	
-	private void comparison (String type, int spot1, int spot2, PrintWriter outstream) {
-		popsegmt("constant", "13", outstream);
+	private void callFunction (String function, String strnargs) {
+		String returnlabel = "VM_INTERNAL_"+(vm_internal++);
+		pushptr(returnlabel);
+		pushvar("LCL");
+		pushvar("ARG");
+		pushvar("THIS");
+		pushvar("THAT");
+		//ARG = SP-n-5
+		int nargs = Integer.parseInt(strnargs);
+		outstream.println("@"+(nargs+5));
+		outstream.println("D=A");
+		outstream.println("@SP");
+		outstream.println("D=M-D");
+		outstream.println("@ARG");
+		outstream.println("M=D");
+		outstream.println("@SP");
+		outstream.println("D=M");
+		outstream.println("@LCL");
+		outstream.println("M=D");
+		outstream.println("@"+function);
+		outstream.println("0;JMP");
+		outstream.println("("+returnlabel+")");
+	}
+	
+	private void comparison (String type) {
+		int spot1 = vm_internal++, spot2 = vm_internal++;
+		popvar("R13");
 		popD(outstream);
-		outstream.println("@13");
+		outstream.println("@R13");
 		outstream.println("D=D-M");
 		outstream.println("@VM_INTERNAL_"+spot1); // jump if true
 		outstream.println("D;J"+type.toUpperCase()); // it's either EQ, LT, or GT anyway
@@ -106,14 +231,25 @@ public class VMParser {
 		outstream.println("@VM_INTERNAL_"+spot2);
 		outstream.println("0;JMP");
 		outstream.println("(VM_INTERNAL_"+spot1+")");
-		outstream.println("@32767"); // 15 1's in binary
-		outstream.println("D=A");
+		outstream.println("D=-1");
 		outstream.println("(VM_INTERNAL_"+spot2+")");
 		pushD(outstream);
 
 	}
 	
-	private void pushsegmt (String segmt, String offset, PrintWriter outstream) {
+	private void pushptr (String ptr) {
+		outstream.println("@"+ptr);
+		outstream.println("D=A");
+		pushD(outstream);
+	}
+	
+	private void pushvar (String var) {
+		outstream.println("@"+var);
+		outstream.println("D=M");
+		pushD(outstream);		
+	}
+	
+	private void pushsegmt (String segmt, String offset, String classname) {
 		int off = Integer.parseInt(offset);
 		
 		switch (segmt) {
@@ -154,11 +290,18 @@ public class VMParser {
 	
 	private void pushD (PrintWriter outstream) {
 		outstream.println("@SP");
-		outstream.println("AM=M+1");
+		outstream.println("M=M+1");
+		outstream.println("A=M-1");
 		outstream.println("M=D");
 	}
 	
-	private void popsegmt (String segmt, String offset, PrintWriter outstream) {
+	private void popvar (String var) {
+		popD(outstream);
+		outstream.println("@"+var);
+		outstream.println("M=D");
+	}
+	
+	private void popsegmt (String segmt, String offset, String classname) {
 		int off = Integer.parseInt(offset);
 		
 		switch (segmt) {
@@ -177,7 +320,7 @@ public class VMParser {
 		case "pointer":
 			// pointer[0] is a @this and pointer[1] is at @that
 			popD(outstream);
-			if (off == 0) outstream.println("@THIS");	
+			if (off == 0) outstream.println("@THIS");
 			else if (off == 1) outstream.println("@THAT");
 			else throw new VMParserException("pointer segment is limited to offsets 0-1.");
 			outstream.println("M=D");
@@ -193,11 +336,11 @@ public class VMParser {
 				outstream.println("@"+off);
 				outstream.println("D=A");
 				outstream.println("@"+segmap.get(segmt));
-				outstream.println("D=A+D");
-				outstream.println("@13");
+				outstream.println("D=M+D");
+				outstream.println("@R13");
 				outstream.println("M=D");
 				popD(outstream);
-				outstream.println("@13");
+				outstream.println("@R13");
 				outstream.println("A=M");
 				outstream.println("M=D");
 			} else throw new VMParserException("Nonexistent segment "+segmt+"!");
@@ -206,10 +349,13 @@ public class VMParser {
 	
 	private void popD (PrintWriter outstream) {
 		outstream.println("@SP");
+		outstream.println("AM=M-1");
 		outstream.println("D=M");
-		outstream.println("M=M-1");
-		outstream.println("A=D");
-		outstream.println("D=M");
+		// outstream.println("M=0"); // do we wipe the memory when we pop?
+	}
+	
+	public void close () {
+		outstream.close();
 	}
 	
 }
