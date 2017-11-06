@@ -27,7 +27,7 @@ public class VMParser {
 		this.outstream = new PrintWriter(new FileWriter(outfile));
 		bootstrap(outstream);
 	}
-	
+
 	private String[] processLine (String ln) {
 		ln = ln.replaceAll("\\/\\/.*", "");
 		String[] potentials = ln.split("\\s");
@@ -37,7 +37,7 @@ public class VMParser {
 		}
 		return applicable.toArray(new String[0]);
 	}
-	
+
 	private void bootstrap (PrintWriter outstream) {
 		// SP=256
 		outstream.println("@256");
@@ -46,11 +46,11 @@ public class VMParser {
 		outstream.println("M=D");
 		// call Sys.init
 		callFunction("Sys.init", "0");
-	}	
-	
+	}
+
 	public void run (File infile, String classname) throws IOException {
 		BufferedReader instream = new BufferedReader(new FileReader(infile));
-		
+
 		for (String line = instream.readLine(); line != null; line = instream.readLine()) {
 			line = line.trim();
 			String[] processed = processLine(line);
@@ -193,7 +193,7 @@ public class VMParser {
 		}
 		instream.close();
 	}
-	
+
 	private void callFunction (String function, String strnargs) {
 		String returnlabel = "VM_INTERNAL_"+(vm_internal++);
 		pushptr(returnlabel);
@@ -217,7 +217,7 @@ public class VMParser {
 		outstream.println("0;JMP");
 		outstream.println("("+returnlabel+")");
 	}
-	
+
 	private void comparison (String type) {
 		int spot1 = vm_internal++, spot2 = vm_internal++;
 		popvar("R13");
@@ -236,22 +236,22 @@ public class VMParser {
 		pushD(outstream);
 
 	}
-	
+
 	private void pushptr (String ptr) {
 		outstream.println("@"+ptr);
 		outstream.println("D=A");
 		pushD(outstream);
 	}
-	
+
 	private void pushvar (String var) {
 		outstream.println("@"+var);
 		outstream.println("D=M");
-		pushD(outstream);		
+		pushD(outstream);
 	}
-	
+
 	private void pushsegmt (String segmt, String offset, String classname) {
 		int off = Integer.parseInt(offset);
-		
+
 		switch (segmt) {
 		case "constant":
 			outstream.println("@"+off);
@@ -265,7 +265,7 @@ public class VMParser {
 			break;
 		case "pointer":
 			// pointer[0] is a @this and pointer[1] is at @that
-			if (off == 0) outstream.println("@THIS");	
+			if (off == 0) outstream.println("@THIS");
 			else if (off == 1) outstream.println("@THAT");
 			else throw new VMParserException("pointer segment is limited to offsets 0-1.");
 			outstream.println("D=M");
@@ -287,23 +287,23 @@ public class VMParser {
 		}
 		pushD(outstream);
 	}
-	
+
 	private void pushD (PrintWriter outstream) {
 		outstream.println("@SP");
 		outstream.println("M=M+1");
 		outstream.println("A=M-1");
 		outstream.println("M=D");
 	}
-	
+
 	private void popvar (String var) {
 		popD(outstream);
 		outstream.println("@"+var);
 		outstream.println("M=D");
 	}
-	
+
 	private void popsegmt (String segmt, String offset, String classname) {
 		int off = Integer.parseInt(offset);
-		
+
 		switch (segmt) {
 		case "constant":
 			popD(outstream);
@@ -346,16 +346,16 @@ public class VMParser {
 			} else throw new VMParserException("Nonexistent segment "+segmt+"!");
 		}
 	}
-	
+
 	private void popD (PrintWriter outstream) {
 		outstream.println("@SP");
 		outstream.println("AM=M-1");
 		outstream.println("D=M");
 		// outstream.println("M=0"); // do we wipe the memory when we pop?
 	}
-	
+
 	public void close () {
 		outstream.close();
 	}
-	
+
 }
