@@ -25,7 +25,7 @@ public class VMParser {
 		this.vm_internal = 0;
 		this.fnname = "";
 		this.outstream = new PrintWriter(new FileWriter(outfile));
-		bootstrap(outstream);
+		bootstrap();
 	}
 
 	private String[] processLine (String ln) {
@@ -38,7 +38,7 @@ public class VMParser {
 		return applicable.toArray(new String[0]);
 	}
 
-	private void bootstrap (PrintWriter outstream) {
+	private void bootstrap () {
 		// SP=256
 		outstream.println("@256");
 		outstream.println("D=A");
@@ -67,31 +67,31 @@ public class VMParser {
 				break;
 			case "add":
 				popvar("R13");
-				popD(outstream);
+				popD();
 				outstream.println("@R13");
 				outstream.println("D=D+M");
-				pushD(outstream);
+				pushD();
 				break;
 			case "sub":
 				popvar("R13");
-				popD(outstream);
+				popD();
 				outstream.println("@R13");
 				outstream.println("D=D-M");
-				pushD(outstream);
+				pushD();
 				break;
 			case "and":
 				popvar("R13");
-				popD(outstream);
+				popD();
 				outstream.println("@R13");
 				outstream.println("D=D&M");
-				pushD(outstream);
+				pushD();
 				break;
 			case "or":
 				popvar("R13");
-				popD(outstream);
+				popD();
 				outstream.println("@R13");
 				outstream.println("D=D|M");
-				pushD(outstream);
+				pushD();
 				break;
 			case "eq":
 			case "gt":
@@ -99,14 +99,14 @@ public class VMParser {
 				comparison(processed[0].toLowerCase());
 				break;
 			case "neg":
-				popD(outstream);
+				popD();
 				outstream.println("D=-D");
-				pushD(outstream);
+				pushD();
 				break;
 			case "not":
-				popD(outstream);
+				popD();
 				outstream.println("D=!D");
-				pushD(outstream);
+				pushD();
 				break;
 			case "goto":
 				if (processed.length < 2) throw new VMParserException("Too few arguments to 'goto'.");
@@ -115,7 +115,7 @@ public class VMParser {
 				break;
 			case "if-goto":
 				if (processed.length < 2) throw new VMParserException("Too few arguments to 'if-goto'.");
-				popD(outstream);
+				popD();
 				outstream.println("@"+fnname+"$"+processed[1]);
 				outstream.println("D;JNE");
 				break;
@@ -221,7 +221,7 @@ public class VMParser {
 	private void comparison (String type) {
 		int spot1 = vm_internal++, spot2 = vm_internal++;
 		popvar("R13");
-		popD(outstream);
+		popD();
 		outstream.println("@R13");
 		outstream.println("D=D-M");
 		outstream.println("@VM_INTERNAL_"+spot1); // jump if true
@@ -233,20 +233,20 @@ public class VMParser {
 		outstream.println("(VM_INTERNAL_"+spot1+")");
 		outstream.println("D=-1");
 		outstream.println("(VM_INTERNAL_"+spot2+")");
-		pushD(outstream);
+		pushD();
 
 	}
 
 	private void pushptr (String ptr) {
 		outstream.println("@"+ptr);
 		outstream.println("D=A");
-		pushD(outstream);
+		pushD();
 	}
 
 	private void pushvar (String var) {
 		outstream.println("@"+var);
 		outstream.println("D=M");
-		pushD(outstream);
+		pushD();
 	}
 
 	private void pushsegmt (String segmt, String offset, String classname) {
@@ -285,10 +285,10 @@ public class VMParser {
 				outstream.println("D=M");
 			} else throw new VMParserException("Nonexistent segment "+segmt+"!");
 		}
-		pushD(outstream);
+		pushD();
 	}
 
-	private void pushD (PrintWriter outstream) {
+	private void pushD () {
 		outstream.println("@SP");
 		outstream.println("M=M+1");
 		outstream.println("A=M-1");
@@ -296,7 +296,7 @@ public class VMParser {
 	}
 
 	private void popvar (String var) {
-		popD(outstream);
+		popD();
 		outstream.println("@"+var);
 		outstream.println("M=D");
 	}
@@ -306,20 +306,20 @@ public class VMParser {
 
 		switch (segmt) {
 		case "constant":
-			popD(outstream);
+			popD();
 			outstream.println("@"+off);
 			outstream.println("M=D");
 			break;
 		case "temp":
 			// @5-@12
 			if (off > 7) throw new VMParserException("temp segment is limited to offsets 0-7.");
-			popD(outstream);
+			popD();
 			outstream.println("@"+(off+5));
 			outstream.println("M=D");
 			break;
 		case "pointer":
 			// pointer[0] is a @this and pointer[1] is at @that
-			popD(outstream);
+			popD();
 			if (off == 0) outstream.println("@THIS");
 			else if (off == 1) outstream.println("@THAT");
 			else throw new VMParserException("pointer segment is limited to offsets 0-1.");
@@ -327,7 +327,7 @@ public class VMParser {
 			break;
 		case "static":
 			// use a variable for its data...@class.offset
-			popD(outstream);
+			popD();
 			outstream.println("@"+classname+"."+off);
 			outstream.println("M=D");
 			break;
@@ -339,7 +339,7 @@ public class VMParser {
 				outstream.println("D=M+D");
 				outstream.println("@R13");
 				outstream.println("M=D");
-				popD(outstream);
+				popD();
 				outstream.println("@R13");
 				outstream.println("A=M");
 				outstream.println("M=D");
@@ -347,7 +347,7 @@ public class VMParser {
 		}
 	}
 
-	private void popD (PrintWriter outstream) {
+	private void popD () {
 		outstream.println("@SP");
 		outstream.println("AM=M-1");
 		outstream.println("D=M");
